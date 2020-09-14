@@ -42,3 +42,5 @@ To start rendering your components call `RiftHTML.renderRoot` passing in your do
 For a full example check [example.js](https://github.com/ThuverX/RiftHTML/blob/master/example.js)
 
 # <a style="color:#FF4136">This framework is still a Work In Progress. Don't expect everything to work as intended.</a>
+
+Created by ThuverX with 🧡 and 🍵
