@@ -328,10 +328,6 @@ class _RiftHTML {
         this.renderDom(instance, rhtml, element)
     }
 
-    registerComponent(component){
-        this.componentList[component.name] = component
-    }
-
     __id = 0
 }
 
@@ -366,7 +362,6 @@ class Component {
                 }
             })
         }
-
 
         return returnValue
     }
