@@ -9,8 +9,8 @@ class ClickComponent extends Component {
 
     render() {
         return rhtml`
-        <div classlist="${[this.clicked && 'red']}" onclick='${this.onClick.bind(this)}'>
-            <b>yeeeeee</b>
+        <div onclick='${this.onClick.bind(this)}'>
+            <b>${this.clicked ? 'Clicked!' : 'Not clicked!'}</b>
         </div>`
     }
 }
@@ -24,4 +24,4 @@ class App extends Component {
     }
 }
 
-RiftHTML.renderRoot(document.querySelector('app'), new App())
+RiftHTML.renderRoot(document.querySelector('app'), App)
