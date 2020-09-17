@@ -32,6 +32,19 @@ class InvalidElementError extends Error {
     }
 }
 
+const $RHook = (object, funcname, callback) => {
+    if(object[funcname].__proto__.used) return
+    let oldFunc = object[funcname]
+
+    object[funcname] = function() {
+        let returnValue = oldFunc.apply(this, arguments)
+        callback(...arguments, returnValue, this)
+        return returnValue
+    }
+
+    object[funcname].__proto__.used = true
+}
+
 class $RiftHTML {
 
     __id = 0
@@ -65,7 +78,6 @@ class $RiftHTML {
 
             if(matched.groups.children) matched.groups.children = this.parse(matched.groups.children)
             if(matched.groups.attributes) matched.groups.attributes = this.attributes(matched.groups.attributes)
-
 
             if(!matched.groups.attributes || matched.groups.attributes.length <= 0)  matched.groups.attributes = {}
             
@@ -106,7 +118,13 @@ class $RiftHTML {
         const processAttribute = (key, value = true) => {
             if(typeof value == 'function') {
                 element[key] = value
-            } else element.setAttribute(key, value)
+            } else {
+                if(key == 'classlist') {
+                    if(Array.isArray(value))
+                        element.setAttribute('class', value.filter(x => !!x).join(' '))
+                    else if(value) element.setAttribute('class', value)
+                } else element.setAttribute(key, value)
+            }
         }
         
         if(vdomElement.attributes) {
@@ -165,7 +183,6 @@ class $RiftHTML {
     }
 
     parseTemplateString(strs, ...vars) {
-
         let _replacement_id = 0
 
         const incrementAndGetReplacement = () => `{$$REPLACEMENT_${_replacement_id++}}`
@@ -183,6 +200,8 @@ class $RiftHTML {
                 rhtml.children.push(replacement)
             } else if(typeof replacement == 'number') {
                 replacement = replacement.toString()
+                rhtml.children.push(replacement)
+            } else if(replacement.$isRiftElement) {
                 rhtml.children.push(replacement)
             }
         }
@@ -225,14 +244,12 @@ class $RiftHTML {
 
         return outRHTML
     }
-
 }
 
 $RiftHTML.DOMMATCHER = /<(?<domtype>\w+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*?)(?:<\/(?:\1)>))/
 $RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)=('|")(?<value>.+)\2/
 $RiftHTML.REPLACEMENTMATCHER = /\{\$\$REPLACEMENT_(?<id>\d+)}/
 $RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','input','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
-
 
 class Component {
     __id = -1
@@ -247,11 +264,14 @@ class Component {
 
         const recursiveAttach = (element) => {
             for(let [key,value] of Object.entries(element)) {
-                if(!Component.$blockedComponentVariables.includes(key)) {
+                if(!Component.$blockedComponentVariables.includes(key) && typeof value != 'function') {
                     Object.defineProperty(element, key,{
                         set(newValue){
                             let old = value
                             value = newValue
+
+                            if(typeof value == 'object')
+                                recursiveAttach(value)
 
                             if(old != value)
                                 self.update()
@@ -261,6 +281,13 @@ class Component {
                             return value
                         }
                     })
+
+                    if(Array.isArray(value)) {
+                        $RHook(value, 'push', () => {
+                            self.update();
+                            recursiveAttach(value)
+                        })
+                    }
 
                     if(typeof value == 'object')
                         recursiveAttach(value)
