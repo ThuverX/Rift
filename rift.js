@@ -32,6 +32,14 @@ class InvalidElementError extends Error {
     }
 }
 
+class UnimplementedRenderMethodError extends Error {
+    name = 'UnimplementedRenderMethodError'
+    constructor(element) {
+        super()
+        this.message = `class ${element}, doesn't have a render method defined`
+    }
+}
+
 const $RHook = (object, funcname, callback) => {
     if(object[funcname].__proto__.used) return
     let oldFunc = object[funcname]
@@ -306,7 +314,7 @@ class Component {
     }
 
     render() {
-        throw 'Unimplemented error'
+        throw new UnimplementedRenderMethodError(this.constructor.name)
     }
 }
 
