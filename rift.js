@@ -53,6 +53,55 @@ const $RHook = (object, funcname, callback) => {
     object[funcname].__proto__.used = true
 }
 
+const requireRegistery = {}
+let firstRequire = true
+
+const requireMatcher = /require\(("|')(?<RequirePath>.+?)(\1)\)/
+
+const require = function (file) {
+    const fixFilename = (filename) => {
+        if(filename.endsWith('.js')) return filename
+        else return filename + '.js'
+    }
+
+    if(firstRequire) {
+        const search = async (filename) => {
+            let fetchResult = await fetch(filename)
+
+            let jsResult = await fetchResult.text()
+    
+            requireRegistery[filename] = jsResult
+    
+            let matches = jsResult.match(new RegExp(requireMatcher, 'gs' ))
+    
+            if(!matches) return
+
+            for(let result of matches) {
+                let path = result.match(new RegExp(requireMatcher, 's' )).groups.RequirePath
+                if(path) { 
+                    await search(fixFilename(path))
+                }
+            }
+        }
+
+        return search(fixFilename(file)).then(() => {
+            firstRequire = false
+            return require(file)
+        })
+    }
+
+    if(!requireRegistery[fixFilename(file)]) throw 'No require reg for file'
+
+    let returnValue = Function(`return (function(module = {exports:{}}){\n${requireRegistery[fixFilename(file)]}\n;return module})()`)()
+
+    let returnExport = returnValue.exports || null
+
+    if(typeof returnExport == 'function' && returnExport.$isRiftComponent)
+        this[returnExport.name] = returnExport
+
+    return returnExport
+}
+
 class $RiftHTML {
 
     __id = 0
@@ -104,7 +153,7 @@ class $RiftHTML {
         this.verifyVirtualElement(vdomElement)
 
         if(!$RiftHTML.DEFAULTELEMENTS.includes(vdomElement.type)) {
-            vdomElement = this.makeVirtual(eval(vdomElement.type))
+            vdomElement = this.makeVirtual(Function('return ' + vdomElement.type)())
         }
         
         let element = document.createElement(vdomElement.type)
