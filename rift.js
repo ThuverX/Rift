@@ -114,8 +114,11 @@ class $RiftHTML {
     
     attributes(attributeString){
         if(!attributeString || attributeString.length <= 0) return {}
-        return attributeString.split(' ').reduce((accumulator, current) => {
-            let match = current.match($RiftHTML.ATTRIBUTEMATCHER)
+
+        let matches = attributeString.match(new RegExp($RiftHTML.ATTRIBUTEMATCHER, 'gs'))
+
+        return matches.reduce((accumulator, current) => {
+            let match = current.match(new RegExp($RiftHTML.ATTRIBUTEMATCHER, 's'))
 
             if(!match) return {...accumulator,...{[current.split('=')[0]]: ''}}
             
@@ -180,6 +183,14 @@ class $RiftHTML {
                     if(Array.isArray(value))
                         element.setAttribute('class', value.filter(x => !!x).join(' '))
                     else if(value) element.setAttribute('class', value)
+                } else if(key == 'style') {
+                    if(typeof value == 'string') {
+                        element.setAttribute(key,value)
+                    } else if(typeof value == 'object') {
+                        for(let [k,v] of Object.entries(value)) {
+                            element.style[k] = v
+                        }
+                    }
                 } else element.setAttribute(key, value)
             }
         }
@@ -263,8 +274,10 @@ class $RiftHTML {
             }
         }
 
-        const patchReplacementAttribute = (rhtml, key, replacement) => {
-            rhtml.attributes[key] = replacement
+        const patchReplacementAttribute = (rhtml, key, replacement, id) => {
+            if(rhtml.attributes[key] && typeof replacement == 'string')
+                rhtml.attributes[key] = rhtml.attributes[key].replace(`{$$REPLACEMENT_${id}}`,replacement)
+            else rhtml.attributes[key] = replacement
         }
 
         const recursiveReplacement = (rhtml) => {
@@ -281,7 +294,7 @@ class $RiftHTML {
                 })
             } else {
                 if(Array.isArray(rhtml.children))
-                    rhtml.map(child => recursiveReplacement(child))
+                    rhtml.children.map(child => recursiveReplacement(child))
                 else if(rhtml.children) recursiveReplacement(rhtml.children)
             }
 
@@ -291,7 +304,7 @@ class $RiftHTML {
                     if(matcher) matcher.map(item => {
                         let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
 
-                        if(match) patchReplacementAttribute(rhtml, key, vars[match.groups.id])
+                        if(match) patchReplacementAttribute(rhtml, key, vars[match.groups.id], match.groups.id)
                     })
                 }
             }
@@ -304,7 +317,7 @@ class $RiftHTML {
 }
 
 $RiftHTML.DOMMATCHER = /<(?<domtype>\w+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*?)(?:<\/(?:\1)>))/
-$RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)=('|")(?<value>.+)\2/
+$RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)=('|")(?<value>.+?)(?:\2)/
 $RiftHTML.REPLACEMENTMATCHER = /\{\$\$REPLACEMENT_(?<id>\d+)}/
 $RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','input','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
 
