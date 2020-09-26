@@ -134,7 +134,7 @@ class $RiftHTML {
         if(!items || items.length == 1) {
             let matched = rhtml.match(new RegExp($RiftHTML.DOMMATCHER,'s'))
 
-            if(!matched) return rhtml
+            if(!matched || matched.groups.repid) return rhtml
 
             if(matched.groups.children) matched.groups.children = this.parse(matched.groups.children)
             if(matched.groups.attributes) matched.groups.attributes = this.attributes(matched.groups.attributes)
@@ -281,8 +281,25 @@ class $RiftHTML {
         }
 
         const recursiveReplacement = (rhtml) => {
+
+            if(Array.isArray(rhtml.children)) {
+                for(let i = 0; i < rhtml.children.length;i++) {
+                    let item = rhtml.children[i]
+                    if(typeof item == 'string') {
+                        let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
+
+                        if(match) {
+                            rhtml.children[i] = vars[match.groups.id]
+                        }
+                    }
+                }
+            }
+            
+            if(!rhtml.$isRiftElement) return
+
             if(typeof rhtml.children == 'string') {
                 let matcher = rhtml.children.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'gs'))
+
                 if(matcher) matcher.map(item => {
                     let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
 
@@ -316,7 +333,7 @@ class $RiftHTML {
     }
 }
 
-$RiftHTML.DOMMATCHER = /<(?<domtype>\w+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*?)(?:<\/(?:\1)>))/
+$RiftHTML.DOMMATCHER = /<(?<domtype>\w+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*)(?:<\/\1)>)|\{\$\$REPLACEMENT_(?<repid>\d+)\}/
 $RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)=('|")(?<value>.+?)(?:\2)/
 $RiftHTML.REPLACEMENTMATCHER = /\{\$\$REPLACEMENT_(?<id>\d+)}/
 $RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','input','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
