@@ -155,9 +155,8 @@ class $RiftHTML {
     renderDomElement(vdomElement) {
         this.verifyVirtualElement(vdomElement)
 
-        if(!$RiftHTML.DEFAULTELEMENTS.includes(vdomElement.type)) {
+        if(!$RiftHTML.DEFAULTELEMENTS.includes(vdomElement.type))
             vdomElement = this.makeVirtual(Function('return ' + vdomElement.type)(), vdomElement.attributes)
-        }
         
         let element = document.createElement(vdomElement.type)
             
@@ -264,8 +263,7 @@ class $RiftHTML {
             if(!Array.isArray(rhtml.children)) rhtml.children = []
 
             if(replacement == null) {
-                replacement = 'null'
-                rhtml.children.push(replacement)
+                rhtml.children.push('null')
             }
             else if(typeof replacement == 'string') {
                 replacement = this.parse(replacement)
