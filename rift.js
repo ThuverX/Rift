@@ -156,7 +156,7 @@ class $RiftHTML {
         this.verifyVirtualElement(vdomElement)
 
         if(!$RiftHTML.DEFAULTELEMENTS.includes(vdomElement.type)) {
-            vdomElement = this.makeVirtual(Function('return ' + vdomElement.type)())
+            vdomElement = this.makeVirtual(Function('return ' + vdomElement.type)(), vdomElement.attributes)
         }
         
         let element = document.createElement(vdomElement.type)
@@ -214,9 +214,9 @@ class $RiftHTML {
 
     #currentcomponent = null
 
-    makeVirtual(component){
+    makeVirtual(component, props = {}){
         if(component.$isRiftComponent) {
-            let componentElement = new component()
+            let componentElement = new component(props)
 
             let renderResult = componentElement.render()
 
@@ -263,7 +263,11 @@ class $RiftHTML {
         const patchReplacementChildren = (rhtml, replacement) => {
             if(!Array.isArray(rhtml.children)) rhtml.children = []
 
-            if(typeof replacement == 'string') {
+            if(replacement == null) {
+                replacement = 'null'
+                rhtml.children.push(replacement)
+            }
+            else if(typeof replacement == 'string') {
                 replacement = this.parse(replacement)
                 rhtml.children.push(replacement)
             } else if(typeof replacement == 'number') {
@@ -341,13 +345,15 @@ $RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','asi
 class Component {
     __id = -1
 
-    constructor() {
+    constructor(props) {
         let returnValue
 
         if(this[this.constructor.name])
-            returnValue = this[this.constructor.name]()
+            returnValue = this[this.constructor.name](props)
 
         let self = this
+
+        this.props = props
 
         const recursiveAttach = (element) => {
             for(let [key,value] of Object.entries(element)) {
