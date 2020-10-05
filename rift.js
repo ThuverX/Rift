@@ -122,7 +122,7 @@ class $RiftHTML {
 
             if(!match) return {...accumulator,...{[current.split('=')[0]]: ''}}
             
-            return {...accumulator, ...{[match.groups.key]: match.groups.value || true}}
+            return {...accumulator, ...{[match.groups.key]: match.groups.value || ''}}
         }, {})
     }
     
@@ -336,9 +336,12 @@ class $RiftHTML {
 }
 
 $RiftHTML.DOMMATCHER = /<(?<domtype>\w+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*)(?:<\/\1)>)|\{\$\$REPLACEMENT_(?<repid>\d+)\}/
-$RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)=('|")(?<value>.+?)(?:\2)/
+$RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)(?:=('|")(?<value>.+?)(?:\2)|)/
 $RiftHTML.REPLACEMENTMATCHER = /\{\$\$REPLACEMENT_(?<id>\d+)}/
-$RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','input','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
+$RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
+
+
+// TODO: REWORK UPDATE SO IT UPDATES EVERYTHING THE NEXT TICK INSTEAD OF DIRECTLY AS THIS CAUSES ELEMENTS TO UPDATE TWICE AND GET LOST IN THE OLD DOM
 
 class Component {
     __id = -1
@@ -375,7 +378,7 @@ class Component {
 
                     if(Array.isArray(value)) {
                         $RHook(value, 'push', () => {
-                            self.update();
+                            self.update()
                             recursiveAttach(value)
                         })
                     }
@@ -406,3 +409,23 @@ Component.$blockedComponentVariables = ['__id','__dom']
 
 const $R = RiftHTML = new $RiftHTML()
 const rhtml = RiftHTML.parseTemplateString
+
+// Reworked default elements
+
+class input extends Component {
+    input(props) {
+        this.value = props.value || ''
+        this.focused = false
+    }
+
+    onchange(event) {
+        this.value = event.target.value
+        if(this.props.onchange) {
+            this.props.onchange(this.value)
+        }
+    }
+
+    render() {
+        return rhtml`<input value="${this.value}" onfocus="${() => this.focused = true}" onblur="${() => this.focused = false}" focus="${this.focused}" onchange="${this.onchange.bind(this)}" onkeyup="${this.onchange.bind(this)}" placeholder="${this.props.placeholder || ''}"/>`
+    }
+}
