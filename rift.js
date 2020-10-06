@@ -104,8 +104,6 @@ const require = function (file) {
 
 class $RiftHTML {
 
-    __id = 0
-
     constructor() {
         this.renderRoot = this.renderRoot.bind(this)
         this.parse = this.parse.bind(this)
@@ -127,7 +125,7 @@ class $RiftHTML {
     }
     
     parse(rhtml) {
-        const domify = ({domtype:type, attributes, children}) => ({$isRiftElement:true, type, __id: this.__id++, attributes, children})
+        const domify = ({domtype:type, attributes, children}) => ({$isRiftElement:true, type, attributes, children})
 
         let items = rhtml.match(new RegExp($RiftHTML.DOMMATCHER,'gs'))
 
@@ -152,17 +150,39 @@ class $RiftHTML {
             throw new InvalidElementError(virtualElement)
     }
 
-    renderDomElement(vdomElement) {
+    renderDomElement(element) {
+        console.log(element)
+        let vdom = null
+        let comp = null
+
+        if(element.$isRiftComponent)
+            comp = new element()
+        else if(element.$isRiftElement)
+            vdom = element
+        else if(element instanceof Component)
+            comp = element
+
+        if(comp && !vdom) vdom = comp.render()
+
+        if(!$RiftHTML.DEFAULTELEMENTS.includes(vdom.type) && !vdom.type.startsWith('native-')) {
+            // What a syntax
+            comp = new (Function('return ' + vdom.type)())(vdom.attributes)
+            vdom = comp.render()
+        }
+            
+        let returnValue = this.renderVDomElement(vdom)
+
+        vdom.__rd = returnValue
+        if(comp)
+            comp.__vc = vdom
+
+        return returnValue
+    }
+
+    renderVDomElement(vdomElement) {
         this.verifyVirtualElement(vdomElement)
         
-        if(!$RiftHTML.DEFAULTELEMENTS.includes(vdomElement.type) && !vdomElement.type.startsWith('native-'))
-            vdomElement = this.makeVirtual(Function('return ' + vdomElement.type)(), vdomElement.attributes)
-        
         let element = document.createElement(!vdomElement.type.startsWith('native-') ? vdomElement.type : vdomElement.type.substr(7))
-            
-        element.$$RIFTINDEX = vdomElement.__id
-        
-        //element.setAttribute('riftindex',vdomElement.__id)
         
         const processChild = (child) => {
             if(typeof child == 'string') {
@@ -196,53 +216,26 @@ class $RiftHTML {
         
         if(vdomElement.attributes) {
             Object.entries(vdomElement.attributes)
-            .map(attr => processAttribute(...attr))
+                .map(attr => processAttribute(...attr))
         }
         
         if(Array.isArray(vdomElement.children))
             vdomElement.children.map(processChild)
         else processChild(vdomElement.children)
-
-        if(this.#currentcomponent && vdomElement.__id == this.#currentcomponent.__id) {
-            this.#currentcomponent.__dom = element
-            this.#currentcomponent = null
-        }
         
         return element
     }
 
-    #currentcomponent = null
-
-    makeVirtual(component, props = {}){
-        if(component.$isRiftComponent) {
-            let componentElement = new component(props)
-
-            let renderResult = componentElement.render()
-
-            componentElement.__id = renderResult.__id
-            this.#currentcomponent = componentElement
-
-            return renderResult
-        } else if(component instanceof Component) {
-            let renderResult = component.render()
-
-            renderResult.__id = component.__id
-            this.#currentcomponent = component
-
-            return renderResult
-        } else return component
-    }
-
     appendDomElement(parentElement, virtualElement){
         if(Array.isArray(virtualElement))
-            return virtualElement.map(child => parentElement.appendChild(this.renderDomElement(this.makeVirtual(child))))
-        else return parentElement.appendChild(this.renderDomElement(this.makeVirtual(virtualElement)))
+            return virtualElement.map(child => parentElement.appendChild(this.renderDomElement(child)))
+        else return parentElement.appendChild(this.renderDomElement(virtualElement))
     }
 
     updateDomElement(originalElement, virtualElement) {
         if(Array.isArray(virtualElement))
-            return virtualElement.map(child => originalElement.replaceWith(this.renderDomElement(this.makeVirtual(child))))
-        else return originalElement.replaceWith(this.renderDomElement(this.makeVirtual(virtualElement)))
+            return virtualElement.map(child => originalElement.replaceWith(this.renderDomElement(child)))
+        else return originalElement.replaceWith(this.renderDomElement(virtualElement))
     }
 
     renderRoot(documentElement, component) {
@@ -344,7 +337,6 @@ $RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','asi
 // nvm but probably still a good idea
 
 class Component {
-    __id = -1
 
     constructor(props) {
         let returnValue
@@ -395,8 +387,8 @@ class Component {
     }
 
     update() {
-        if(this.__dom)
-            $R.updateDomElement(this.__dom, this)
+        if(this.__vc)
+            $R.updateDomElement(this.__vc.__rd, this)
     }
 
     render() {
@@ -405,7 +397,7 @@ class Component {
 }
 
 Component.$isRiftComponent = true
-Component.$blockedComponentVariables = ['__id','__dom']
+Component.$blockedComponentVariables = ['props','__vc']
 
 const $R = RiftHTML = new $RiftHTML()
 const rhtml = RiftHTML.parseTemplateString

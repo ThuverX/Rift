@@ -9,7 +9,7 @@ class ClickComponent extends Component {
 
     render() {
         return rhtml`
-        <div onclick='${this.onClick.bind(this)}'>
+        <div onclick='${this.onClick.bind(this)}' class="clicker">
             <b>${this.clicked ? 'Clicked!' : 'Not clicked!'}</b>
         </div>`
     }
