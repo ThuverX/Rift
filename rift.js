@@ -1,4 +1,4 @@
-/* RiftHTML v0.3
+/* RiftHTML b8
 
 MIT License
 
@@ -24,33 +24,64 @@ SOFTWARE.
 
 */
 
-class InvalidElementError extends Error {
-    name = 'InvalidElementError'
-    constructor(element) {
-        super()
-        this.message = `${JSON.stringify(element)}, is not a valid virtual document element`
-    }
-}
-
 class UnimplementedRenderMethodError extends Error {
     name = 'UnimplementedRenderMethodError'
-    constructor(element) {
+
+    constructor(type) {
         super()
-        this.message = `class ${element}, doesn't have a render method defined`
+
+        this.message = `Class [${type}] doesn't have a valid render function`
     }
 }
 
-const $RHook = (object, funcname, callback) => {
-    if(object[funcname].__proto__.used) return
-    let oldFunc = object[funcname]
+function EmptyString(length = 1) {
+    return Array(Math.floor(length)).fill('').join(' ')
+}
 
-    object[funcname] = function() {
-        let returnValue = oldFunc.apply(this, arguments)
-        callback(...arguments, returnValue, this)
-        return returnValue
+class UnclosedHTMLElementError extends Error {
+    name = 'UnclosedHTMLElementError'
+
+    constructor(lineNumber, linestring) {
+        super()
+
+        this.message = `Unclosed HTML element on line ${lineNumber}\n${EmptyString(5)}at ${linestring.trim()}\n`
     }
+}
 
-    object[funcname].__proto__.used = true
+class InternalError extends Error {
+    name = 'InternalError'
+
+    constructor(text) {
+        super()
+
+        this.message = text + `\n${EmptyString(5)}This error was caused by Rift's internals\n${EmptyString(5)}please report it on Github! (https://github.com/ThuverX/Rift)\n`
+    }
+}
+
+class RequireFileError extends Error {
+    name = 'RequireFileError'
+
+    constructor(text) {
+        super()
+
+        this.message = text
+    }
+}
+
+function AsArray(v) {
+    return Array.isArray(v) ? v : [v]
+}
+
+function RegexMulti(string = '', regex = / /, flags = '') {
+    let matches = string.match(new RegExp(regex, 'g' + flags))
+    if(!matches) return []
+    return matches.map(str => str.match(new RegExp(regex, flags)))
+}
+
+function Zip(a, b) {
+    let arr = []
+    for (let key in a) arr.push([a[key], b[key]])
+    return arr
 }
 
 const requireRegistery = {}
@@ -90,305 +121,474 @@ const require = function (file) {
         })
     }
 
-    if(!requireRegistery[fixFilename(file)]) throw 'No require reg for file'
+    if(!requireRegistery[fixFilename(file)]) throw new RequireFileError(`Couldn't find '${file}' in require registery`)
 
     let returnValue = Function(`return (function(module = {exports:{}}){\n${requireRegistery[fixFilename(file)]}\n;return module})()`)()
 
     let returnExport = returnValue.exports || null
+    
+    const registerComponents = (obj) => {
+        if(obj.$isRiftComponent) {
+            Rift.registerComponent(obj)
+            return
+        }
 
-    if(typeof returnExport == 'function' && returnExport.$isRiftComponent)
-        this[returnExport.name] = returnExport
+        for(let [k,v] of Object.entries(obj)) {
+            if(typeof v == 'object' && v.$isRiftComponent)
+                Rift.registerComponent(v,k)
+            else registerComponents(v)
+        }
+    }
+
+    if(returnExport) registerComponents(returnExport)
 
     return returnExport
 }
 
-class $RiftHTML {
+class $Rift_Instance {
+    constructor() {}
 
-    constructor() {
-        this.renderRoot = this.renderRoot.bind(this)
-        this.parse = this.parse.bind(this)
-        this.parseTemplateString = this.parseTemplateString.bind(this)
+    parseAttributes(string) {
+        let results = RegexMulti(string, $Rift_Instance.regex.attributes, 's')
+
+        let attributesReturns = {}
+
+        for(let res of results)
+            attributesReturns[res.groups.AttrKey] = res.groups.AttrValue || ''
+
+        return attributesReturns
     }
+
+    parse(string) {
+        let tokens = [
+            ['OpeningDomTag', /<(?<TagName>(?:\w|-)+)(?: (?<Attributes>(?:[^<>]|\\.)+?)|)>/, +1],
+            ['ClosedDomTag', /<(?<TagName>(?:\w|-)+)(?: (?<Attributes>(?:[^<>]|\\.)+?)|)\/>/, 0],
+            ['ClosingDomTag', /<\/(?<TagName>(?:\w|-)+)>/, -1],
+            ['Text', /(?<Value>(?:(?:\\.)|[^<>])+)/, 0]
+        ]
     
-    attributes(attributeString){
-        if(!attributeString || attributeString.length <= 0) return {}
-
-        let matches = attributeString.match(new RegExp($RiftHTML.ATTRIBUTEMATCHER, 'gs'))
-
-        return matches.reduce((accumulator, current) => {
-            let match = current.match(new RegExp($RiftHTML.ATTRIBUTEMATCHER, 's'))
-
-            if(!match) return {...accumulator,...{[current.split('=')[0]]: ''}}
-            
-            return {...accumulator, ...{[match.groups.key]: match.groups.value || ''}}
-        }, {})
-    }
+        let outTokens = []
     
-    parse(rhtml) {
-        const domify = ({domtype:type, attributes, children}) => ({$isRiftElement:true, type, attributes, children})
+        let str = string.replace(/\n|\r/,'') || ''
+        let index = 0
+        let numIndex = 0
+        let depth = 0
 
-        let items = rhtml.match(new RegExp($RiftHTML.DOMMATCHER,'gs'))
+        while(str.length > 0) {
+            let indexBefore = index
+            for(let [tokenName, tokenMatcher, depthIncrementer] of tokens) {
+                let match = str.match(tokenMatcher)
+                if(match && match.index == 0) {
+                    str = str.substr(match[0].length).trim()
 
-        if(!items || items.length == 1) {
-            let matched = rhtml.match(new RegExp($RiftHTML.DOMMATCHER,'s'))
-
-            if(!matched || matched.groups.repid) return rhtml
-
-            if(matched.groups.children) matched.groups.children = this.parse(matched.groups.children)
-            if(matched.groups.attributes) matched.groups.attributes = this.attributes(matched.groups.attributes)
-
-            if(!matched.groups.attributes || matched.groups.attributes.length <= 0)  matched.groups.attributes = {}
-            
-            return domify(matched.groups)
-        } else {
-            return items.map(item => this.parse(item))
-        }
-    }
-
-    verifyVirtualElement(virtualElement) {
-        if(!virtualElement || !virtualElement.type || !virtualElement.$isRiftElement)
-            throw new InvalidElementError(virtualElement)
-    }
-
-    renderDomElement(element) {
-        console.log(element)
-        let vdom = null
-        let comp = null
-
-        if(element.$isRiftComponent)
-            comp = new element()
-        else if(element.$isRiftElement)
-            vdom = element
-        else if(element instanceof Component)
-            comp = element
-
-        if(comp && !vdom) vdom = comp.render()
-
-        if(!$RiftHTML.DEFAULTELEMENTS.includes(vdom.type) && !vdom.type.startsWith('native-')) {
-            // What a syntax
-            comp = new (Function('return ' + vdom.type)())(vdom.attributes)
-            vdom = comp.render()
-        }
-            
-        let returnValue = this.renderVDomElement(vdom)
-
-        vdom.__rd = returnValue
-        if(comp)
-            comp.__vc = vdom
-
-        return returnValue
-    }
-
-    renderVDomElement(vdomElement) {
-        this.verifyVirtualElement(vdomElement)
-        
-        let element = document.createElement(!vdomElement.type.startsWith('native-') ? vdomElement.type : vdomElement.type.substr(7))
-        
-        const processChild = (child) => {
-            if(typeof child == 'string') {
-                let textnode = document.createTextNode(child)
-
-                element.appendChild(textnode)
-            } else if(typeof child == 'object') {
-                this.appendDomElement(element, child)
-            }
-        }
-
-        const processAttribute = (key, value = true) => {
-            if(typeof value == 'function') {
-                element[key] = value
-            } else {
-                if(key == 'classlist') {
-                    if(Array.isArray(value))
-                        element.setAttribute('class', value.filter(x => !!x).join(' '))
-                    else if(value) element.setAttribute('class', value)
-                } else if(key == 'style') {
-                    if(typeof value == 'string') {
-                        element.setAttribute(key,value)
-                    } else if(typeof value == 'object') {
-                        for(let [k,v] of Object.entries(value)) {
-                            element.style[k] = v
-                        }
-                    }
-                } else element.setAttribute(key, value)
-            }
-        }
-        
-        if(vdomElement.attributes) {
-            Object.entries(vdomElement.attributes)
-                .map(attr => processAttribute(...attr))
-        }
-        
-        if(Array.isArray(vdomElement.children))
-            vdomElement.children.map(processChild)
-        else processChild(vdomElement.children)
-        
-        return element
-    }
-
-    appendDomElement(parentElement, virtualElement){
-        if(Array.isArray(virtualElement))
-            return virtualElement.map(child => parentElement.appendChild(this.renderDomElement(child)))
-        else return parentElement.appendChild(this.renderDomElement(virtualElement))
-    }
-
-    updateDomElement(originalElement, virtualElement) {
-        if(Array.isArray(virtualElement))
-            return virtualElement.map(child => originalElement.replaceWith(this.renderDomElement(child)))
-        else return originalElement.replaceWith(this.renderDomElement(virtualElement))
-    }
-
-    renderRoot(documentElement, component) {
-        this.appendDomElement(documentElement, component)
-    }
-
-    parseTemplateString(strs, ...vars) {
-        let _replacement_id = 0
-
-        const incrementAndGetReplacement = () => `{$$REPLACEMENT_${_replacement_id++}}`
-
-        let outString = strs.reduce((acc,cur, i) => 
-            acc += (i != 0 ? incrementAndGetReplacement() : '') + cur, '')
-
-        let outRHTML = this.parse(outString)
-
-        const patchReplacementChildren = (rhtml, replacement) => {
-            if(!Array.isArray(rhtml.children)) rhtml.children = []
-
-            if(replacement == null) {
-                rhtml.children.push('null')
-            }
-            else if(typeof replacement == 'string') {
-                replacement = this.parse(replacement)
-                rhtml.children.push(replacement)
-            } else if(typeof replacement == 'number') {
-                replacement = replacement.toString()
-                rhtml.children.push(replacement)
-            } else if(replacement.$isRiftElement) {
-                rhtml.children.push(replacement)
-            }
-        }
-
-        const patchReplacementAttribute = (rhtml, key, replacement, id) => {
-            if(rhtml.attributes[key] && typeof replacement == 'string')
-                rhtml.attributes[key] = rhtml.attributes[key].replace(`{$$REPLACEMENT_${id}}`,replacement)
-            else rhtml.attributes[key] = replacement
-        }
-
-        const recursiveReplacement = (rhtml) => {
-
-            if(Array.isArray(rhtml.children)) {
-                for(let i = 0; i < rhtml.children.length;i++) {
-                    let item = rhtml.children[i]
-                    if(typeof item == 'string') {
-                        let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
-
-                        if(match) {
-                            rhtml.children[i] = vars[match.groups.id]
-                        }
-                    }
+                    outTokens.push({
+                        tokenName,
+                        beginIndex: index,
+                        endIndex: index + match[0].length,
+                        data: match.groups,
+                        numIndex,
+                        depth
+                    })
+                    
+                    depth += depthIncrementer
+                    
+                    index += match[0].length
                 }
             }
             
-            if(!rhtml.$isRiftElement) return
+            numIndex ++
+    
+            if(indexBefore == index) throw new InternalError('Tag did not get processed properly at index ' + index)
+        }
+    
+        let group = (tokenList) => {
+            let returnElements = []
 
-            if(typeof rhtml.children == 'string') {
-                let matcher = rhtml.children.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'gs'))
+            let currentElement = null
+            let currentToken = null
+            let elementChildren = []
 
-                if(matcher) matcher.map(item => {
-                    let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
+            for(let token of tokenList) {
+                if(token.tokenName == 'OpeningDomTag') {
+                    if(!currentElement) {
+                        currentElement = {
+                            type: token.data.TagName,
+                            attributes: this.parseAttributes(token.data.Attributes),
+                            children: [],
+                            $isRiftElement: true
+                        }
 
-                    if(match)  {
-                        if(Array.isArray(vars[match.groups.id]))
-                            vars[match.groups.id].map(item => patchReplacementChildren(rhtml, item))
-                        else patchReplacementChildren(rhtml, vars[match.groups.id])
+                        currentToken = token
+                    } else if(currentToken.depth != token.depth) {
+                        elementChildren.push(token)
                     }
-                })
-            } else {
-                if(Array.isArray(rhtml.children))
-                    rhtml.children.map(child => recursiveReplacement(child))
-                else if(rhtml.children) recursiveReplacement(rhtml.children)
+                } else if(token.tokenName == 'ClosingDomTag') {
+                    if(currentElement && currentToken.depth == token.depth - 1) {
+                        currentElement.children = group(elementChildren) || []
+
+                        returnElements.push(currentElement)
+
+                        currentElement = null
+                        elementChildren = []
+
+                        continue
+                    } else if(currentToken.depth != token.depth) {
+                        elementChildren.push(token)
+                    }
+                } else {
+                    if(currentElement && currentToken.depth != token.depth) {
+                        elementChildren.push(token)
+                    } else {
+                        if(token.tokenName == 'ClosedDomTag') {
+                            returnElements.push({
+                                type: token.data.TagName,
+                                attributes: this.parseAttributes(token.data.Attributes),
+                                children: [],
+                                $isRiftElement: true
+                            })
+                        } else if(token.tokenName == 'Text') {
+                            returnElements.push({
+                                type: 'TextNode',
+                                value: token.data.Value,
+                                $isRiftString: true
+                            })
+                        }
+
+                        if(returnElements.length == tokenList.length)
+                            continue
+                    }
+                }
             }
 
-            for(let [key,value] of Object.entries(rhtml.attributes)) {
-                if(typeof value == 'string') {
-                    let matcher = value.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'gs'))
-                    if(matcher) matcher.map(item => {
-                        let match = item.match(new RegExp($RiftHTML.REPLACEMENTMATCHER,'s'))
+            if(currentElement) {
+                let lines = string.split('\n')
+                let lineIndex = 0
+                let lineNumber = -1
 
-                        if(match) patchReplacementAttribute(rhtml, key, vars[match.groups.id], match.groups.id)
+                lines.map((line, i) => {
+                    if(lineNumber == -1 && currentToken.beginIndex >= lineIndex && currentToken.beginIndex < lineIndex + line.length) {
+                        lineNumber = i 
+                    } else {
+                        lineIndex += line.length
+                    }
+                })
+                
+                throw new UnclosedHTMLElementError(lineNumber, lines[lineNumber])
+            }
+
+            return returnElements
+        }
+
+        return group(outTokens)
+    }
+
+    parseTemplateString(strs, vars) {
+        let _replacement_id = 0
+
+        let outString = strs.reduce((acc,cur, i) => 
+            acc += (i != 0 ? `{$$REPLACEMENT_${_replacement_id++}}` : '') + cur, '')
+
+        let outvdom = this.parse(outString)
+
+        const stringReplace = (value) => {
+            if(typeof value != 'string') return
+            let matches = RegexMulti(value, $Rift_Instance.regex.replacement)
+            if(!matches) return value
+
+            for(let {groups:{ReplacementId}} of matches) {
+                let replacement = vars[ReplacementId]
+                if(typeof replacement == 'string') {
+                    value = value.replace(`{$$REPLACEMENT_${ReplacementId}}`, replacement)
+                } else if(typeof replacement == 'function') {
+                    value = replacement
+                } else if(typeof replacement == 'object' || Array.isArray(replacement)) {
+                    value = JSON.stringify(replacement)
+                } else {
+                    value = 'null'
+                }
+            }
+
+            return value
+        }
+
+
+        const replace = (object) => {
+            if(object.$isRiftElement) {
+                object.type = stringReplace(object.type)
+
+                for(let [key,value] of Object.entries(object.attributes)) {
+                    object.attributes[key] = stringReplace(value)
+                }
+
+                AsArray(object.children).map(replace)
+            }
+
+            if(object.$isRiftString) {
+                object.value = stringReplace(object.value)
+            }
+        }
+
+        AsArray(outvdom).map(replace)
+
+        return outvdom
+    }
+
+    applyAttribute(node,key,value) {
+        if(typeof value == 'function')
+            node[key] = value
+        else node.setAttribute(key, value)
+    }
+
+    diff(realElement, vLeft, vRight) {
+        const diffChildren = (a,b) => {
+            const childPatches = []
+
+            a.forEach((oldChild, i) => childPatches.push(diff(oldChild, b[i])))
+
+            const addPatches = []
+            for (const addChild of b.slice(a.length)) {
+                addPatches.push(node => {
+                    node.appendChild(this.render(addChild))
+                    return node
+                })
+            }
+
+            return parentNode => {
+                for (const [patch, child] of Zip(childPatches, parentNode.childNodes)) 
+                    patch(child)
+
+                for (const patch of addPatches) 
+                    patch(parentNode)
+
+                return parentNode
+            }
+        }
+
+        const diffAttributes = (a,b) => {
+            const patches = []
+
+            for (const [k, v] of Object.entries(b)) {
+                patches.push(node => {
+                    this.applyAttribute(node,k,v)
+                    return node
+                })
+            }
+
+            for (const k in a) {
+                if (!(k in b)) {
+                    patches.push(node => {
+                        node.removeAttribute(k)
+                        return node
                     })
                 }
             }
+
+            return node => {
+                for (const patch of patches)
+                    patch(node)
+            }
         }
 
-        recursiveReplacement(outRHTML)
+        const diff = (a,b) => {
+            if(!b) {
+                return node => {
+                    node.remove()
+                    return null
+                }
+            }
 
-        return outRHTML
+            if(a.$isRiftString || b.$isRiftString) {
+                if(a.value != b.value) {
+                    return node => {
+                        let newNode = this.render(b)
+                        node.replaceWith(newNode)
+
+                        b._internal_element_ = newNode
+                        return newNode
+                    }
+                } else return node => node
+            }
+
+            if(a.type !== b.type) {
+                return node => {
+                    let newNode = this.render(b)
+                    node.replaceWith(newNode)
+
+                    b._internal_element_ = newNode
+                    return newNode
+                }
+            }
+
+            const attributesPatches = diffAttributes(a.attributes, b.attributes)
+            const childrenPatches = diffChildren(a.children, b.children)
+
+            return node => {
+                attributesPatches(node)
+                childrenPatches(node)
+
+                b._internal_element_ = node
+                return node
+            }
+        }
+
+        return diff(vLeft,vRight)(realElement)
+    }
+
+    componentRegistery = {}
+
+    registerComponent(component, name) {
+        if(!name) name = component.name
+
+        this.componentRegistery[name] = component
+    }
+
+    hasComponent(type) {
+        return Object.keys(this.componentRegistery).includes(type)
+    }
+
+    createComponent(type, props) {
+        if(type.$isRiftComponent) return new type(props)
+        if(this.hasComponent(type)) return new this.componentRegistery[type](props)
+
+        return new (Function('return ' + type)())(props)
+    }
+
+    render(vElement) {
+        if(vElement.$isRiftElement) {
+            if($Rift_Instance.elements.default.includes(vElement.type)) {
+                let element = document.createElement(vElement.type)
+
+                for(let [k, v] of Object.entries(vElement.attributes || {})) {
+                    this.applyAttribute(element,k,v)
+                }
+
+                for(let vChild of vElement.children) {
+                    AsArray(this.render(vChild)).map((child => element.appendChild(child)))
+                }
+
+                vElement._internal_element_ = element
+
+                return element
+            } else {
+                let newComponent = this.createComponent(vElement.type, vElement.attributes)
+                let elements = newComponent._render().map((c) => this.render(c))
+
+                return elements
+            }
+        } else if(vElement.$isRiftString) {
+            let element = document.createTextNode(vElement.value)
+
+            vElement._internal_element_ = element
+
+            return element
+        }
+    }
+
+    update(vOld, vNew) {
+        AsArray(Zip(vOld, vNew)).map(([l,r]) => {
+            this.diff(l._internal_element_, l, r)
+        })
+
+        return vNew
+    }
+
+    toVirtual(compOrVdom) {
+        let vdom = null
+
+        if(compOrVdom.$isRiftElement) {
+            vdom = compOrVdom
+        } else if(compOrVdom.$isRiftComponent) {
+            // create
+        } else if(compOrVdom instanceof $Rift_Component) {
+            vdom = compOrVdom._render()
+        } else if(typeof compOrVdom == 'string') {
+            vdom = this.parse(compOrVdom)
+        }
+
+        return vdom
+    }
+
+    root(element, compOrVdom) {
+        let vdom = AsArray(this.toVirtual(compOrVdom))
+
+        for(let vdomElement of vdom) {
+            element.appendChild(this.render(vdomElement))
+        }
     }
 }
 
-$RiftHTML.DOMMATCHER = /<(?<domtype>(?:\w|-)+)(?: |)(?<attributes>.*?)(?:\/>|>(?<children>.*)(?:<\/\1)>)|\{\$\$REPLACEMENT_(?<repid>\d+)\}/
-$RiftHTML.ATTRIBUTEMATCHER = /(?<key>\w+)(?:=('|")(?<value>.+?)(?:\2)|)/
-$RiftHTML.REPLACEMENTMATCHER = /\{\$\$REPLACEMENT_(?<id>\d+)}/
-$RiftHTML.DEFAULTELEMENTS = ['a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr'];
+$Rift_Instance.regex = {
+    attributes: /(?<AttrKey>(?:\w|-)+)(?:=('|")(?<AttrValue>.+?|)(?:\2)|)/,
+    replacement: /\{\$\$REPLACEMENT_(?<ReplacementId>\d+)}/
+}
 
-// TODO: REWORK UPDATE SO IT UPDATES EVERYTHING THE NEXT TICK INSTEAD OF DIRECTLY AS THIS CAUSES ELEMENTS TO UPDATE TWICE AND GET LOST IN THE OLD DOM
-// nvm but probably still a good idea
+$Rift_Instance.elements = {
+    default: ['input','a','abbr','address','applet','area','article','aside','audio','b','base','basefont','bdi','bdo','blockquote','body','br','button','canvas','caption','cite','code','col','colgroup','data','datalist','dd','del','details','dfn','dialog','dir','div','dl','dt','em','embed','fieldset','figcaption','figure','font','footer','form','frame','frameset','h1','h2','h3','h4','h5','h6','head','header','hgroup','hr','html','i','iframe','img','ins','kbd','label','legend','li','link','main','map','mark','marquee','menu','meta','meter','nav','noscript','object','ol','optgroup','option','output','p','param','picture','pre','progress','q','rp','rt','ruby','s','samp','script','section','select','slot','small','source','span','strong','style','sub','summary','sup','table','tbody','td','template','textarea','tfoot','th','thead','time','title','tr','track','u','ul','var','video','wbr']
+}
 
-class Component {
+class $Rift_Component {
 
-    constructor(props) {
+    constructor(props = {}) {
         let returnValue
 
+        this.props = props
+        
         if(this[this.constructor.name])
             returnValue = this[this.constructor.name](props)
+            
+        this.update = this.update.bind(this)
 
         let self = this
 
-        this.props = props
+        const attachToArray = (arr) => {
+            let oldPush = arr.push
 
-        const recursiveAttach = (element) => {
-            for(let [key,value] of Object.entries(element)) {
-                if(!Component.$blockedComponentVariables.includes(key) && typeof value != 'function') {
-                    Object.defineProperty(element, key,{
-                        set(newValue){
-                            let old = value
-                            value = newValue
+            arr.push = function(item) {
+                self.update()
 
-                            if(typeof value == 'object')
-                                recursiveAttach(value)
+                if(typeof item == 'object')
+                    attach(item)
 
-                            if(old != value)
-                                self.update()
-                        },
-        
-                        get(){
-                            return value
-                        }
-                    })
-
-                    if(Array.isArray(value)) {
-                        $RHook(value, 'push', () => {
-                            self.update()
-                            recursiveAttach(value)
-                        })
-                    }
-
-                    if(typeof value == 'object')
-                        recursiveAttach(value)
-                }
+                return oldPush.apply(this, arguments)
             }
         }
 
-        recursiveAttach(this)
+        const attach = (object) => {
+            for(let [key, value] of Object.entries(object)) {
+                Object.defineProperty(object, key, {
+                    set(newValue) {
+                        let oldValue = object[key]
+
+                        value = newValue
+                        if(oldValue != newValue)
+                            self.update()
+                    },
+                    get() {
+                        return value
+                    }
+                })
+
+                if(typeof value == 'object')
+                    attach(value)
+
+                if(Array.isArray(value)) 
+                    attachToArray(value)
+            }
+        }
+
+        attach(this)
 
         return returnValue
     }
 
     update() {
-        if(this.__vc)
-            $R.updateDomElement(this.__vc.__rd, this)
+        this._internal_vdom_ = Rift.update(this._internal_vdom_, this.render())
+    }
+
+    _render() {
+        let returnValue = this.render()
+        this._internal_vdom_ = returnValue
+        return returnValue
     }
 
     render() {
@@ -396,29 +596,10 @@ class Component {
     }
 }
 
-Component.$isRiftComponent = true
-Component.$blockedComponentVariables = ['props','__vc']
+$Rift_Component.$isRiftComponent = true
 
-const $R = RiftHTML = new $RiftHTML()
-const rhtml = RiftHTML.parseTemplateString
+const Component = $Rift_Component
 
-// Reworked default elements
+function Rift(){let _inner=new $Rift_Instance();let _Rift=(data,...vars)=>_inner.parseTemplateString(data,vars);_Rift.toString=()=>'Rift Instance';_Rift.__proto__=_inner;return _Rift}
 
-class input extends Component {
-    input(props) {
-        this.value = props.value || ''
-        this.focused = false
-    }
-
-    onchange(event) {
-        this.value = event.target.value
-        if(this.props.onchange) {
-            this.props.onchange(this.value)
-        }
-    }
-
-    render() {
-        // native- prefix to stop recursion
-        return rhtml`<native-input value="${this.value}" onfocus="${() => this.focused = true}" onblur="${() => this.focused = false}" focus="${this.focused}" onchange="${this.onchange.bind(this)}" onkeyup="${this.onchange.bind(this)}" placeholder="${this.props.placeholder || ''}"/>`
-    }
-}
+let r = Rift = new Rift()

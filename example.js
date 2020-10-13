@@ -8,7 +8,7 @@ class ClickComponent extends Component {
     }
 
     render() {
-        return rhtml`
+        return r`
         <div onclick='${this.onClick.bind(this)}' class="clicker">
             <b>${this.clicked ? 'Clicked!' : 'Not clicked!'}</b>
         </div>`
@@ -17,11 +17,11 @@ class ClickComponent extends Component {
 
 class App extends Component {
     render() {
-        return rhtml`
+        return r`
         <div>
             <ClickComponent/>
         </div>`
     }
 }
 
-RiftHTML.renderRoot(document.querySelector('app'), App)
+Rift.root(document.querySelector('app'), new App())
