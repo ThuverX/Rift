@@ -1,0 +1,22 @@
+{
+  "name": "riftts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThuverX/RiftHTML.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ThuverX/RiftHTML/issues"
+  },
+  "homepage": "https://github.com/ThuverX/RiftHTML#readme",
+  "devDependencies": {
+    "typescript": "^4.0.5"
+  }
+}

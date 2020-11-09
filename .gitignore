@@ -1,0 +1,4 @@
+node_modules
+prod/comp.js
+prod/index.html
+prod/test.js

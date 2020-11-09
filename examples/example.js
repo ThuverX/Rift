@@ -1,7 +1,5 @@
 class ClickComponent extends Component {
-    ClickComponent() {
-        this.clicked = false
-    }
+    clicked = false
 
     onClick() {
         this.clicked = !this.clicked
@@ -15,6 +13,8 @@ class ClickComponent extends Component {
     }
 }
 
+registerComponent(ClickComponent)
+
 class App extends Component {
     render() {
         return r`
@@ -24,4 +24,4 @@ class App extends Component {
     }
 }
 
-Rift.root(document.querySelector('app'), new App())
+Rift.root(document.querySelector('app'), App)

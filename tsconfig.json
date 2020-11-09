@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "module": "system",
+        "outFile": "prod/rift.js",
+        "target": "ES2019",
+        "jsx": "preserve",
+        "sourceMap": true
+    },
+    "exclude": [
+        "node_modules",
+        "**/node_modules/*"
+    ]
+}
