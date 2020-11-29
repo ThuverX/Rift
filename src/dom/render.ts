@@ -20,7 +20,7 @@ function render(vdom: VirtualElement) : HTMLElement | Text {
 
     if(vdom.type !== 'Text') {
         if(components.has(vdom.type)) {
-            return renderComponent(new (components.get(vdom.type) as any)(vdom.attributes))
+            return renderComponent(new (components.get(vdom.type) as any)(vdom.attributes, vdom.children))
         }
 
         let element : HTMLElement = document.createElement(vdom.type)

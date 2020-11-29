@@ -2,8 +2,9 @@ abstract class Component<T = {}> implements VirtualDomElement {
 
     props: T
 
-    constructor(props: T) {
+    constructor(props: T, children?: VirtualElement[]) {
         this.props = props
+        this.children = children || []
 
         this.update = this.update.bind(this)
 
@@ -47,11 +48,16 @@ abstract class Component<T = {}> implements VirtualDomElement {
             }
         }
 
-        setTimeout(() => attach(this), 0)
+        if(this[this.constructor.name])
+            this[this.constructor.name](props, children)
+
+        setTimeout(() => {
+            attach(this)
+        }, 0)
     }
 
     public type:string
-    public children?:[]
+    public children?: VirtualElement[]
     public attributes?: VirtualDomElementAttributes
 
     public isRiftComponent: boolean = true

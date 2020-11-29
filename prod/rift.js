@@ -30,10 +30,11 @@ const Rift = {
     diff: diff
 };
 class Component {
-    constructor(props) {
+    constructor(props, children) {
         this.isRiftComponent = true;
         this.blockedProperties = ['type', 'children', 'attributes', 'blockedProperties'];
         this.props = props;
+        this.children = children || [];
         this.update = this.update.bind(this);
         let self = this;
         const attachToArray = (arr) => {
@@ -66,9 +67,15 @@ class Component {
                 }
             }
         };
-        setTimeout(() => attach(this), 0);
+        if (this[this.constructor.name])
+            this[this.constructor.name](props, children);
+        setTimeout(() => {
+            attach(this);
+        }, 0);
     }
     _render() {
+        if (!this.render())
+            return;
         for (let [key, value] of Object.entries(this.render()))
             this[key] = value;
     }
@@ -107,8 +114,12 @@ window.registerComponent = components.register;
 // @ts-ignore
 window.components = components;
 function renderComponent(comp) {
+    if (!comp)
+        return null;
     comp._render();
     let returnValue = render(comp);
+    if (!returnValue)
+        return null;
     comp.dom = returnValue;
     return returnValue;
 }
@@ -189,12 +200,21 @@ function update(element, v1, v2) {
 }
 function mount(element, vdom) {
     if (vdom.mountToRiftComponent) {
-        return element.appendChild(renderComponent(new vdom()));
+        let ret = renderComponent(new vdom());
+        if (ret)
+            return element.appendChild(ret);
+        return null;
     }
     if (vdom.isRiftComponent) {
-        return element.appendChild(renderComponent(vdom));
+        let ret = renderComponent(vdom);
+        if (ret)
+            return element.appendChild(ret);
+        return null;
     }
-    return element.appendChild(render(vdom));
+    let ret = render(vdom);
+    if (ret)
+        return element.appendChild(ret);
+    return null;
 }
 function applyAttribute(element, key, value) {
     if (typeof value == 'function') {
@@ -219,7 +239,7 @@ function render(vdom) {
     isVirtualDomElement(vdom);
     if (vdom.type !== 'Text') {
         if (components.has(vdom.type)) {
-            return renderComponent(new (components.get(vdom.type))(vdom.attributes));
+            return renderComponent(new (components.get(vdom.type))(vdom.attributes, vdom.children));
         }
         let element = document.createElement(vdom.type);
         if (vdom.attributes) {
